@@ -882,6 +882,25 @@ function normalize(text) {
   return (text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+// Matching por límites de palabra/frase en vez de substring plano: evita
+// falsos positivos como 'neuro' (keyword de Neurofunk) encontrado dentro de
+// 'neurohop' (un subgénero totalmente distinto) — bug real que apareció al
+// probar la taxonomía. El límite es "no alfanumérico o borde de string" a
+// ambos lados de la keyword completa (que puede tener espacios/guiones
+// internos, esos se preservan literalmente).
+const keywordRegexCache = new Map();
+function keywordRegex(kw) {
+  let re = keywordRegexCache.get(kw);
+  if (re) return re;
+  const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  re = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`);
+  keywordRegexCache.set(kw, re);
+  return re;
+}
+function matchesKeyword(haystack, kw) {
+  return keywordRegex(kw).test(haystack);
+}
+
 // Offset de matiz determinista por subgénero (para que cada uno tenga su
 // propio color dentro de la familia del género, sin física ni azar real).
 function subHueOffset(genreName, subName) {
@@ -896,8 +915,8 @@ function subHueOffset(genreName, subName) {
 function keywordScoreFor(haystack, genreDef, subKeywords) {
   let score = 0;
   const matched = [];
-  for (const kw of genreDef.keywords) if (haystack.includes(kw)) { score += 2; matched.push(kw); }
-  for (const kw of subKeywords) if (haystack.includes(kw)) { score += 3; matched.push(kw); }
+  for (const kw of genreDef.keywords) if (matchesKeyword(haystack, kw)) { score += 2; matched.push(kw); }
+  for (const kw of subKeywords) if (matchesKeyword(haystack, kw)) { score += 3; matched.push(kw); }
   return { score, matched };
 }
 
@@ -940,8 +959,12 @@ function stableHash(str) {
  * elegir un subgénero de forma estable, marcándolo con `confidence` muy
  * baja para que la UI pueda distinguirlo de una clasificación real.
  */
-export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysis = null) {
-  const haystack = normalize([rawGenreTag, ...rawTags, title].filter(Boolean).join(' '));
+export function classifyGenre({ rawGenreTag, rawTags = [], title = '', description = '' }, analysis = null) {
+  // La descripción se trunca: suele incluir bloques largos de "sígueme en..."
+  // sin relación con el género, y cuanto más texto irrelevante, más riesgo
+  // de coincidencias accidentales — los primeros ~300 caracteres suelen ser
+  // donde la gente pone el BPM/género/mood real de forma libre.
+  const haystack = normalize([rawGenreTag, ...rawTags, title, (description || '').slice(0, 300)].filter(Boolean).join(' '));
   const audioSummary = analysis ? extractAudioSummary(analysis) : null;
 
   let best = { genre: null, subgenre: null, combined: -Infinity, keywordScore: 0, audioScore: 0, matched: [] };

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
+import { PlayButton } from './PlayerBar';
 
 const SORTERS = {
   recent: (a, b) => new Date(b.addedAt) - new Date(a.addedAt),
@@ -56,9 +57,12 @@ export default function TrackList() {
         <ul className="track-list">
           {list.map((t) => (
             <li key={t.id}>
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 className={`track-list-item${t.id === selectedTrackId ? ' selected' : ''}`}
                 onClick={() => selectTrack(t.id)}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && selectTrack(t.id)}
               >
                 <span className="tl-dot" style={{ background: `hsl(${t.genre?.hue || 0},70%,60%)` }} />
                 <span className="tl-text">
@@ -66,7 +70,8 @@ export default function TrackList() {
                   <span className="tl-sub">{t.genre?.subgenre || t.genre?.primary || 'Sin clasificar'}</span>
                 </span>
                 {t.analysis && <span className="tl-bpm">{Math.round(t.analysis.rhythm.bpm)} BPM</span>}
-              </button>
+                <PlayButton track={t} size="small" />
+              </div>
             </li>
           ))}
         </ul>

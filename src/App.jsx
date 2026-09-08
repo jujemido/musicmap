@@ -5,6 +5,7 @@ import TrackInput from './components/TrackInput';
 import TrackList from './components/TrackList';
 import TrackDetail from './components/TrackDetail';
 import SettingsPanel from './components/SettingsPanel';
+import PlayerBar from './components/PlayerBar';
 import { useStore } from './store/useStore';
 import { taxonomyStats } from './lib/genreTaxonomy';
 import './App.css';
@@ -75,6 +76,8 @@ export default function App() {
           <TrackDetail />
         </div>
       </div>
+
+      <PlayerBar />
 
       {showSettings && (
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>

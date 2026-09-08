@@ -16,19 +16,43 @@ npm run dev
 
 ## Cómo añadir canciones
 
-1. **Enlace de SoundCloud**: requiere un `client_id` (Ajustes ⚙️). La API
-   pública de SoundCloud no admite registro de apps nuevas desde hace años, así
-   que no hay uno "oficial" que dar por defecto. Si el `client_id` falla o el
-   CDN bloquea la descarga del stream (CORS), el track se guarda igualmente
-   con los metadatos que sí se pudieron resolver, marcado como "solo
-   metadatos" (sin ficha técnica de audio).
+1. **Enlace de SoundCloud**: funciona de inmediato, **sin configurar nada**.
+   Se resuelve primero por el **oEmbed público** de SoundCloud
+   (`soundcloud.com/oembed`), un estándar abierto para incrustar reproductores
+   que no requiere client_id ni autenticación — da título, artista y carátula.
+   Con eso el track ya se añade y clasifica (por título/descripción, o por
+   estimación si no hay señal). Si además configuras un `client_id` propio en
+   Ajustes ⚙️ (opcional, mejora pero no es necesario), se intenta enriquecer
+   con la API v2 no oficial: género/tags reales, waveform y el stream de audio
+   para el análisis DSP y la reproducción completos. Sin client_id, el track
+   queda con metadatos únicamente (sin ficha de audio ni reproducción propia).
 2. **Archivo de audio local** (🎵 Subir audio local): la vía más fiable para
-   obtener el análisis de audio *completo* (espectro, ritmo, voz, efectos...),
+   obtener el análisis de audio *completo* y poder reproducirlo desde la app,
    ya que no depende de CORS ni de SoundCloud.
 3. **Manual** (✍️): título/artista/género a mano, sin análisis de audio, para
    catalogar algo aunque no se pueda analizar.
 4. **🌌 Cargar demo**: genera ~15 canciones de ejemplo con datos sintéticos
    (no auditivos reales) para ver el mapa funcionando de inmediato.
+
+## Reproducción
+
+Barra de reproducción persistente (play/pausa, detener, siguiente/anterior
+track, avanzar/retroceder 10s, barra de progreso con seek) para cualquier
+track con audio real disponible — subido como archivo local, o descargado
+del stream de SoundCloud cuando hay client_id configurado y funciona. El
+audio se mantiene como Blob URL **solo en memoria** (no se persiste en
+localStorage: no cabría, y no sobreviviría a una recarga), así que tras
+recargar la página los tracks previamente añadidos quedan sin audio
+reproducible hasta volver a añadirlos. Los tracks del dataset demo (datos
+sintéticos, no auditivos reales) no son reproducibles.
+
+## Mapa: zoom y navegación
+
+Rueda del ratón para zoom (centrado en el cursor), arrastrar sobre el fondo
+vacío del mapa para desplazar la vista (paneo), arrastrar un nodo para
+moverlo dentro de la simulación de fuerzas, y controles +/−/reset en la
+esquina inferior derecha. Al pasar el ratón por un nodo aparece un tooltip
+con título, subgénero y BPM.
 
 ## Qué se analiza y cómo (honesto, sin IA)
 
@@ -89,12 +113,17 @@ categoría y calcula similitud coseno ponderada. Hay 4 perfiles de pesos
 
 ## Limitaciones que hay que tener presentes
 
-- El acceso al stream de audio de SoundCloud desde el navegador depende de un
-  `client_id` no oficial y de que el CDN permita CORS — puede dejar de
-  funcionar sin aviso. La vía de archivo local no tiene ese problema.
+- El oEmbed público de SoundCloud da metadatos básicos (título/artista/
+  carátula) sin necesitar nada configurado, pero no da tags/género ni acceso
+  al audio — para el análisis DSP y la reproducción completos hace falta un
+  `client_id` (no oficial, puede caducar sin aviso) y que el CDN permita CORS.
+  La vía de archivo local no depende de ninguna de las dos cosas.
 - Sin key exacta garantizada: la estimación de tonalidad es una aproximación
   clásica de MIR, no un análisis perfecto.
 - La calidad de género/subgénero depende de lo completa que esté la taxonomía
-  manual en `genreTaxonomy.js`.
-- Todo vive en el `localStorage` del navegador: sin exportar, se pierde si se
+  manual en `genreTaxonomy.js`, y de que haya tags/descripción/audio con
+  señal real — sin nada de eso, se usa una estimación por hash marcada como
+  tal (🎲) en vez de dejar el track sin clasificar.
+- Todo vive en el `localStorage` del navegador (excepto el audio reproducible,
+  que es efímero por sesión — ver arriba): sin exportar, se pierde si se
   borra el sitio.

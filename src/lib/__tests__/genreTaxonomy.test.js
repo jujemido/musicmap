@@ -50,6 +50,13 @@ describe('classifyGenre: solo keywords (sin audio)', () => {
     }
   });
 
+  it('el hue del resultado varía entre distintos subgéneros de la misma familia', () => {
+    const a = classifyGenre({ rawGenreTag: '', rawTags: ['hard techno'], title: '' });
+    const b = classifyGenre({ rawGenreTag: '', rawTags: ['dub techno'], title: '' });
+    expect(a.primary).toBe(b.primary);
+    expect(a.hue).not.toBe(b.hue);
+  });
+
   it('sin ningún tag ni análisis, igualmente asigna un género concreto (nunca "Sin clasificar")', () => {
     const r = classifyGenre({ rawGenreTag: '', rawTags: [], title: '' });
     expect(r.primary).not.toBe('Sin clasificar');
@@ -71,12 +78,32 @@ describe('classifyGenre: solo keywords (sin audio)', () => {
     const r = classifyGenre({ rawGenreTag: 'Dance & EDM', rawTags: [], title: 'Untitled' });
     expect(r.primary).not.toBe('Sin clasificar');
   });
+});
 
-  it('el hue del resultado varía entre distintos subgéneros de la misma familia', () => {
-    const a = classifyGenre({ rawGenreTag: '', rawTags: ['hard techno'], title: '' });
-    const b = classifyGenre({ rawGenreTag: '', rawTags: ['dub techno'], title: '' });
-    expect(a.primary).toBe(b.primary);
-    expect(a.hue).not.toBe(b.hue);
+describe('classifyGenre: matching por límites de palabra (no substring plano)', () => {
+  it('"k-pop" matchea K Pop igualmente (keyword con guion interno)', () => {
+    const r = classifyGenre({ rawGenreTag: '', rawTags: ['k-pop'], title: '' });
+    expect(r.primary).toBe('Pop');
+    expect(r.subgenre).toBe('K Pop');
+  });
+
+  it('"populationcore" NO matchea Pop por contener "pop" como substring', () => {
+    const r = classifyGenre({ rawGenreTag: '', rawTags: ['populationcore'], title: '' });
+    expect(r.isGuess).toBe(true);
+  });
+
+  it('"neurohop" sigue sin robarle la clasificación a Neurofunk (regresión)', () => {
+    const r = classifyGenre({ rawGenreTag: '', rawTags: ['neurohop'], title: '' });
+    expect(r.primary).toBe('Drum & Bass');
+    expect(r.subgenre).toBe('Neurohop');
+  });
+});
+
+describe('classifyGenre: la descripción aporta señal cuando no hay tags', () => {
+  it('detecta género/subgénero desde el texto libre de la descripción', () => {
+    const r = classifyGenre({ rawGenreTag: '', rawTags: [], title: 'Untitled', description: 'free download, dark psy 148bpm, enjoy the trip' });
+    expect(r.primary).toBe('Trance');
+    expect(r.subgenre.toLowerCase()).toContain('psy');
   });
 });
 

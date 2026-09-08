@@ -3,6 +3,8 @@ import { forceSimulation, forceManyBody, forceCollide, forceCenter, forceLink } 
 import { useStore } from '../store/useStore';
 
 const AFFINITY_THRESHOLD = 0.55;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
 function hueToColor(hue, alpha = 1) {
   return `hsla(${hue}, 70%, 60%, ${alpha})`;
@@ -23,13 +25,28 @@ export default function GalaxyView() {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const simRef = useRef(null);
+  const viewRef = useRef({ x: 0, y: 0, k: 1 });
   const tracks = useStore((s) => s.tracks);
   const affinities = useStore((s) => s.affinities);
   const selectedTrackId = useStore((s) => s.selectedTrackId);
   const selectTrack = useStore((s) => s.selectTrack);
   const theme = useStore((s) => s.settings.theme);
   const nodesRef = useRef([]);
-  const [hovered, setHovered] = useState(null); // { id, title, sub, bpm, x, y }
+  const [hovered, setHovered] = useState(null); // { id, title, sub, bpm, x, y } en coords de pantalla
+  const [zoomPct, setZoomPct] = useState(100);
+
+  function applyZoom(newK, pivotScreenX, pivotScreenY, container) {
+    const view = viewRef.current;
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newK));
+    const cx = pivotScreenX ?? container.clientWidth / 2;
+    const cy = pivotScreenY ?? container.clientHeight / 2;
+    const worldX = (cx - view.x) / view.k;
+    const worldY = (cy - view.y) / view.k;
+    view.k = clamped;
+    view.x = cx - worldX * view.k;
+    view.y = cy - worldY * view.k;
+    setZoomPct(Math.round(view.k * 100));
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -87,7 +104,11 @@ export default function GalaxyView() {
     let hoveredIdRef = null;
 
     function draw() {
+      const view = viewRef.current;
       ctx.clearRect(0, 0, width, height);
+      ctx.save();
+      ctx.translate(view.x, view.y);
+      ctx.scale(view.k, view.k);
 
       // links
       for (const l of links) {
@@ -98,7 +119,7 @@ export default function GalaxyView() {
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(t.x, t.y);
         ctx.strokeStyle = `rgba(${colors.linkBase},${0.08 + l.score * 0.25})`;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 / view.k;
         ctx.stroke();
       }
 
@@ -112,7 +133,7 @@ export default function GalaxyView() {
         ctx.fillStyle = hueToColor(hue, n.id === selectedTrackId ? 1 : isHovered ? 0.95 : 0.85);
         ctx.fill();
         if (n.id === selectedTrackId || isHovered) {
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2 / view.k;
           ctx.strokeStyle = n.id === selectedTrackId ? colors.selectRing : colors.text;
           ctx.stroke();
         }
@@ -123,39 +144,58 @@ export default function GalaxyView() {
           ctx.fillText(truncate(n.track.title, 18), n.x, n.y + r + 12);
         }
       }
+      ctx.restore();
       animId = requestAnimationFrame(draw);
     }
     draw();
 
-    function pick(clientX, clientY) {
+    function toWorld(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
-      const x = clientX - rect.left;
-      const y = clientY - rect.top;
+      const view = viewRef.current;
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
+      return { x: (sx - view.x) / view.k, y: (sy - view.y) / view.k, sx, sy };
+    }
+
+    function pick(clientX, clientY) {
+      const { x, y } = toWorld(clientX, clientY);
       for (const n of nodes) {
         const r = radiusFor(n.track);
-        if ((n.x - x) ** 2 + (n.y - y) ** 2 <= (r + 3) ** 2) return n;
+        if ((n.x - x) ** 2 + (n.y - y) ** 2 <= (r + 3 / viewRef.current.k) ** 2) return n;
       }
       return null;
     }
 
     let dragNode = null;
+    let panning = null; // { startClientX, startClientY, startViewX, startViewY }
+
     function onDown(e) {
       const p = e.touches ? e.touches[0] : e;
       const hit = pick(p.clientX, p.clientY);
       if (hit) {
         dragNode = hit;
-        hit.fx = hit.x;
-        hit.fy = hit.y;
+        const { x, y } = toWorld(p.clientX, p.clientY);
+        hit.fx = x;
+        hit.fy = y;
         selectTrack(hit.id);
         sim.alphaTarget(0.3).restart();
+      } else {
+        const view = viewRef.current;
+        panning = { startClientX: p.clientX, startClientY: p.clientY, startViewX: view.x, startViewY: view.y };
       }
     }
     function onMove(e) {
       const p = e.touches ? e.touches[0] : e;
-      const rect = canvas.getBoundingClientRect();
       if (dragNode) {
-        dragNode.fx = p.clientX - rect.left;
-        dragNode.fy = p.clientY - rect.top;
+        const { x, y } = toWorld(p.clientX, p.clientY);
+        dragNode.fx = x;
+        dragNode.fy = y;
+        return;
+      }
+      if (panning) {
+        const view = viewRef.current;
+        view.x = panning.startViewX + (p.clientX - panning.startClientX);
+        view.y = panning.startViewY + (p.clientY - panning.startClientY);
         return;
       }
       if (e.touches) return; // sin hover en táctil
@@ -164,20 +204,23 @@ export default function GalaxyView() {
       if (nextId !== hoveredIdRef) {
         hoveredIdRef = nextId;
         if (hit) {
+          const view = viewRef.current;
           setHovered({
             id: hit.id,
             title: hit.track.title,
             sub: hit.track.genre?.subgenre || hit.track.genre?.primary || 'Sin clasificar',
             bpm: hit.track.analysis ? Math.round(hit.track.analysis.rhythm.bpm) : null,
-            x: hit.x,
-            y: hit.y,
+            x: hit.x * view.k + view.x,
+            y: hit.y * view.k + view.y,
           });
         } else {
           setHovered(null);
         }
       } else if (hit) {
-        // mantener la posición del tooltip actualizada mientras el nodo se mueve por la física
-        setHovered((prev) => (prev && prev.id === hit.id ? { ...prev, x: hit.x, y: hit.y } : prev));
+        const view = viewRef.current;
+        setHovered((prev) => (prev && prev.id === hit.id
+          ? { ...prev, x: hit.x * view.k + view.x, y: hit.y * view.k + view.y }
+          : prev));
       }
     }
     function onUp() {
@@ -187,10 +230,17 @@ export default function GalaxyView() {
         sim.alphaTarget(0);
       }
       dragNode = null;
+      panning = null;
     }
     function onLeave() {
       hoveredIdRef = null;
       setHovered(null);
+    }
+    function onWheel(e) {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const factor = Math.exp(-e.deltaY * 0.001);
+      applyZoom(viewRef.current.k * factor, e.clientX - rect.left, e.clientY - rect.top, container);
     }
     canvas.addEventListener('mousedown', onDown);
     canvas.addEventListener('mousemove', onMove);
@@ -199,6 +249,7 @@ export default function GalaxyView() {
     canvas.addEventListener('touchstart', onDown, { passive: true });
     canvas.addEventListener('touchmove', onMove, { passive: true });
     canvas.addEventListener('touchend', onUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
       cancelAnimationFrame(animId);
@@ -211,6 +262,7 @@ export default function GalaxyView() {
       canvas.removeEventListener('touchstart', onDown);
       canvas.removeEventListener('touchmove', onMove);
       canvas.removeEventListener('touchend', onUp);
+      canvas.removeEventListener('wheel', onWheel);
     };
   }, [tracks, affinities, selectedTrackId, selectTrack, theme]);
 
@@ -223,6 +275,18 @@ export default function GalaxyView() {
           <span>{hovered.sub}{hovered.bpm ? ` · ${hovered.bpm} BPM` : ''}</span>
         </div>
       )}
+      <div className="zoom-controls">
+        <button onClick={() => applyZoom(viewRef.current.k * 1.3, undefined, undefined, containerRef.current)}>+</button>
+        <span>{zoomPct}%</span>
+        <button onClick={() => applyZoom(viewRef.current.k / 1.3, undefined, undefined, containerRef.current)}>−</button>
+        <button
+          className="zoom-reset"
+          title="Restablecer vista"
+          onClick={() => { viewRef.current = { x: 0, y: 0, k: 1 }; setZoomPct(100); }}
+        >
+          ⟲
+        </button>
+      </div>
       {Object.keys(tracks).length === 0 && (
         <div className="galaxy-empty">Añade una canción para empezar a construir tu galaxia musical.</div>
       )}

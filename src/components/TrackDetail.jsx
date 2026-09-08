@@ -1,5 +1,6 @@
 import { useStore } from '../store/useStore';
 import { getSimilarTracks } from '../lib/affinity';
+import { PlayButton } from './PlayerBar';
 
 const BAND_LABELS = [
   ['subBass', 'Sub-bass'], ['bass', 'Bass'], ['lowMid', 'Low-mid'], ['mid', 'Mid'],
@@ -92,7 +93,10 @@ export default function TrackDetail() {
     <div className="track-detail">
       <button className="close-btn" onClick={() => selectTrack(null)}>✕</button>
       <div className="track-detail-header">
-        {track.artworkUrl ? <img src={track.artworkUrl} alt="" className="artwork" /> : <div className="artwork placeholder" />}
+        <div className="artwork-wrap">
+          {track.artworkUrl ? <img src={track.artworkUrl} alt="" className="artwork" /> : <div className="artwork placeholder" />}
+          {track.audioUrl && <PlayButton track={track} size="large" />}
+        </div>
         <div>
           <h3>{track.title}</h3>
           <p className="artist">{track.artist}</p>
@@ -109,7 +113,7 @@ export default function TrackDetail() {
         </div>
       </div>
 
-      {track.soundcloudUrl && (
+      {track.soundcloudUrl && !track.audioUrl && (
         <iframe
           title="soundcloud-player"
           className="sc-player"

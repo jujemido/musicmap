@@ -8,10 +8,25 @@ import { generateDemoTracks } from '../lib/demoData';
 
 const initial = loadState();
 
+// audioUrl es un Blob URL en memoria (para el reproductor): no sobrevive a
+// una recarga de página, así que nunca se guarda en localStorage.
+function stripAudioUrl(tracks) {
+  const out = {};
+  for (const [id, t] of Object.entries(tracks)) {
+    if (t.audioUrl) {
+      const { audioUrl, ...rest } = t;
+      out[id] = rest;
+    } else {
+      out[id] = t;
+    }
+  }
+  return out;
+}
+
 function persist(state) {
   saveState({
     schemaVersion: state.schemaVersion,
-    tracks: state.tracks,
+    tracks: stripAudioUrl(state.tracks),
     affinities: state.affinities,
     settings: state.settings,
   });
@@ -33,6 +48,7 @@ export const useStore = create((set, get) => ({
 
   removeTrack: (id) => set((s) => {
     const tracks = { ...s.tracks };
+    if (tracks[id]?.audioUrl) URL.revokeObjectURL(tracks[id].audioUrl);
     delete tracks[id];
     const affinities = Object.fromEntries(Object.entries(s.affinities).filter(([k]) => !k.includes(id)));
     const next = { ...s, tracks, affinities, selectedTrackId: s.selectedTrackId === id ? null : s.selectedTrackId };
@@ -51,6 +67,7 @@ export const useStore = create((set, get) => ({
   }),
 
   clearAll: () => set((s) => {
+    for (const t of Object.values(s.tracks)) if (t.audioUrl) URL.revokeObjectURL(t.audioUrl);
     const next = { ...s, tracks: {}, affinities: {}, selectedTrackId: null };
     persist(next);
     return next;
@@ -58,7 +75,7 @@ export const useStore = create((set, get) => ({
 
   exportData: () => {
     const s = get();
-    exportStateToFile({ schemaVersion: s.schemaVersion, tracks: s.tracks, affinities: s.affinities, settings: s.settings });
+    exportStateToFile({ schemaVersion: s.schemaVersion, tracks: stripAudioUrl(s.tracks), affinities: s.affinities, settings: s.settings });
   },
 
   importData: async (file) => {
@@ -97,19 +114,21 @@ export const useStore = create((set, get) => ({
 
       let analysis = null;
       let analysisMode = 'sin_audio';
+      let audioUrl = null;
       try {
         set({ ingest: { status: 'working', stage: 'descargando audio del stream', pct: 15, error: null } });
         const buffer = await fetchStreamArrayBuffer(meta, clientId);
         analysis = await analyzeAudioBuffer(buffer, (stage, pct) =>
           set({ ingest: { status: 'working', stage, pct, error: null } })
         );
+        audioUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/mpeg' }));
         analysisMode = 'completo';
       } catch (audioErr) {
         console.warn('Análisis de audio no disponible, se guarda solo con metadatos', audioErr);
         analysisMode = 'solo_metadatos';
       }
 
-      finalizeAndAddTrack(set, get, meta, analysis, analysisMode);
+      finalizeAndAddTrack(set, get, meta, analysis, analysisMode, audioUrl);
       set({ ingest: { status: 'done', stage: '', pct: 100, error: null } });
     } catch (e) {
       const msg = e instanceof SoundCloudError ? e.message : e.message || 'Error desconocido';
@@ -126,6 +145,7 @@ export const useStore = create((set, get) => ({
       const analysis = await analyzeAudioBuffer(buffer, (stage, pct) =>
         set({ ingest: { status: 'working', stage, pct, error: null } })
       );
+      const audioUrl = URL.createObjectURL(file);
       const id = `local-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const meta = {
         id,
@@ -137,7 +157,7 @@ export const useStore = create((set, get) => ({
         rawGenreTag: '',
         rawTags: [],
       };
-      finalizeAndAddTrack(set, get, meta, analysis, 'completo');
+      finalizeAndAddTrack(set, get, meta, analysis, 'completo', audioUrl);
       set({ ingest: { status: 'done', stage: '', pct: 100, error: null } });
     } catch (e) {
       set({ ingest: { status: 'error', stage: '', pct: 0, error: e.message } });
@@ -153,7 +173,7 @@ export const useStore = create((set, get) => ({
   dismissIngestError: () => set({ ingest: { status: 'idle', stage: '', pct: 0, error: null } }),
 }));
 
-function finalizeAndAddTrack(set, get, meta, analysis, analysisMode) {
+function finalizeAndAddTrack(set, get, meta, analysis, analysisMode, audioUrl = null) {
   const genre = classifyGenre(meta, analysis);
   const featureVector = analysis ? buildFeatureVector(analysis) : null;
   const track = {
@@ -163,6 +183,7 @@ function finalizeAndAddTrack(set, get, meta, analysis, analysisMode) {
     analysis,
     genre,
     featureVector,
+    audioUrl,
   };
   set((s) => {
     const tracks = { ...s.tracks, [track.id]: track };
