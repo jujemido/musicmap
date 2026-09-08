@@ -51,13 +51,15 @@ No hay modelos entrenados ni llamadas a APIs de IA en ningún punto.
 El género/subgénero (estilo Every Noise) sale de una **taxonomía curada a
 mano** (`src/lib/genreTaxonomy.js`) por coincidencia de keywords en tags/título,
 reforzada con el perfil de audio para desempatar subgénero. Actualmente cubre
-**37 macro-géneros y 423 subgéneros (460 nodos)**, con un foco muy fuerte y
-muy profundo en electrónica: Techno (30 subs), House (40), Trance (29),
-Drum & Bass (24), Dubstep (18), Trap (15), Footwork/Juke, Global Bass
-(gqom, kuduro, moombahton, baile funk...), Club/Ballroom, Phonk, Hardcore/
-Hard Dance (25), Breakbeat, UK Garage, Grime, Electro, IDM/Experimental,
-Ambient/Downtempo, Synthwave, Vaporwave, Industrial/EBM, Darkwave/Coldwave,
-Hyperpop/Digicore, Disco, Electro Swing, Livetronica, Chiptune... Cada
+**42 macro-géneros y 516 subgéneros (558 nodos)**, con un foco muy fuerte y
+muy profundo en electrónica: Techno (46 subs), House (58), Trance (41),
+Drum & Bass (32), Dubstep (23), Trap (15), Hardcore/Hard Dance (33),
+Footwork/Juke, Global Bass (gqom, kuduro, moombahton, baile funk...),
+Club/Ballroom, Phonk, Breakbeat, UK Garage, Grime, Electro,
+IDM/Experimental, Ambient/Downtempo, Synthwave, Vaporwave, Industrial/EBM,
+Darkwave/Coldwave, Hyperpop/Digicore, Disco, Electro Swing, Livetronica,
+Chiptune, Dungeon Synth, Festival EDM/Mainstage, Neurobass/Glitch Bass,
+Speed/Hi-Energy Bass (donk, bounce), Tekno/Free Party... Cada
 subgénero recibe además su propio matiz de color dentro de la familia de su
 género (offset determinista sobre el hue base), como en Every Noise. Es el
 activo más importante para seguir ampliando con el tiempo.
