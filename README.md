@@ -1,0 +1,72 @@
+# MusicMap
+
+App 100% cliente (sin backend, sin IA) que analiza canciones de SoundCloud (o
+audio local) con DSP/MIR clásico —espectro, ritmo, tonalidad, voz, efectos de
+producción, dinámica y estructura— y las coloca en un mapa tipo galaxia donde
+las canciones afines se atraen, más una vista tipo Every Noise por
+género/subgénero. Todo se guarda en `localStorage`, con export/import JSON y
+un dataset de demo generable sin red.
+
+## Arrancar
+
+```bash
+npm install
+npm run dev
+```
+
+## Cómo añadir canciones
+
+1. **Enlace de SoundCloud**: requiere un `client_id` (Ajustes ⚙️). La API
+   pública de SoundCloud no admite registro de apps nuevas desde hace años, así
+   que no hay uno "oficial" que dar por defecto. Si el `client_id` falla o el
+   CDN bloquea la descarga del stream (CORS), el track se guarda igualmente
+   con los metadatos que sí se pudieron resolver, marcado como "solo
+   metadatos" (sin ficha técnica de audio).
+2. **Archivo de audio local** (🎵 Subir audio local): la vía más fiable para
+   obtener el análisis de audio *completo* (espectro, ritmo, voz, efectos...),
+   ya que no depende de CORS ni de SoundCloud.
+3. **Manual** (✍️): título/artista/género a mano, sin análisis de audio, para
+   catalogar algo aunque no se pueda analizar.
+4. **🌌 Cargar demo**: genera ~15 canciones de ejemplo con datos sintéticos
+   (no auditivos reales) para ver el mapa funcionando de inmediato.
+
+## Qué se analiza y cómo (honesto, sin IA)
+
+Todo el análisis es DSP/MIR determinista (FFT propia, autocorrelación,
+Krumhansl-Schmuckler para tonalidad, novelty de Foote para estructura, etc.),
+implementado en `src/lib/dsp.js` y orquestado en `src/lib/audioAnalysis.js`.
+No hay modelos entrenados ni llamadas a APIs de IA en ningún punto.
+
+- **Espectro**: 7 bandas de frecuencia, centroide, rolloff, flatness, flux.
+- **Ritmo**: BPM (autocorrelación sobre onsets por flujo espectral),
+  regularidad, swing, densidad rítmica por banda.
+- **Tonalidad**: chromagram + algoritmo Krumhansl-Schmuckler → key/modo/Camelot.
+- **Voz**: heurística por energía en banda de formantes + modulación silábica
+  4-8Hz (no es reconocimiento de voz, es una estimación de presencia).
+- **Producción/efectos**: reverb (decaimiento post-onset), distorsión/clipping,
+  compresión (crest factor), anchura estéreo.
+- **Dinámica**: RMS, rango dinámico, curva de energía, posición del clímax.
+- **Estructura**: matriz de auto-similitud + detección de secciones.
+
+El género/subgénero (estilo Every Noise) sale de una **taxonomía curada a
+mano** (`src/lib/genreTaxonomy.js`) por coincidencia de keywords en tags/título,
+reforzada con el perfil de audio para desempatar subgénero. Es el activo más
+importante para ampliar con el tiempo.
+
+## Afinidad entre canciones
+
+`src/lib/affinity.js` construye un vector de features normalizado por
+categoría y calcula similitud coseno ponderada. Hay 4 perfiles de pesos
+(Todo / DJ / Producción / Voz) seleccionables en Ajustes.
+
+## Limitaciones que hay que tener presentes
+
+- El acceso al stream de audio de SoundCloud desde el navegador depende de un
+  `client_id` no oficial y de que el CDN permita CORS — puede dejar de
+  funcionar sin aviso. La vía de archivo local no tiene ese problema.
+- Sin key exacta garantizada: la estimación de tonalidad es una aproximación
+  clásica de MIR, no un análisis perfecto.
+- La calidad de género/subgénero depende de lo completa que esté la taxonomía
+  manual en `genreTaxonomy.js`.
+- Todo vive en el `localStorage` del navegador: sin exportar, se pierde si se
+  borra el sitio.
