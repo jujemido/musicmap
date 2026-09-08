@@ -50,8 +50,14 @@ No hay modelos entrenados ni llamadas a APIs de IA en ningún punto.
 
 El género/subgénero (estilo Every Noise) sale de una **taxonomía curada a
 mano** (`src/lib/genreTaxonomy.js`) por coincidencia de keywords en tags/título,
-reforzada con el perfil de audio para desempatar subgénero. Es el activo más
-importante para ampliar con el tiempo.
+reforzada con el perfil de audio para desempatar subgénero. Actualmente cubre
+**26 macro-géneros y 201 subgéneros (227 nodos)**, con un foco muy fuerte en
+electrónica (Techno, House, Trance, Drum & Bass, Dubstep, Bass/Trap, Phonk,
+Hardcore/Hard Dance, Breakbeat, UK Garage, Electro, IDM/Experimental,
+Ambient/Downtempo, Synthwave, Industrial/EBM, Hyperpop, Disco...). Cada
+subgénero recibe además su propio matiz de color dentro de la familia de su
+género (offset determinista sobre el hue base), como en Every Noise. Es el
+activo más importante para seguir ampliando con el tiempo.
 
 ## Afinidad entre canciones
 

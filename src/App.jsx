@@ -6,7 +6,10 @@ import TrackList from './components/TrackList';
 import TrackDetail from './components/TrackDetail';
 import SettingsPanel from './components/SettingsPanel';
 import { useStore } from './store/useStore';
+import { taxonomyStats } from './lib/genreTaxonomy';
 import './App.css';
+
+const stats = taxonomyStats();
 
 export default function App() {
   const [view, setView] = useState('galaxy');
@@ -19,6 +22,7 @@ export default function App() {
     <div className="app-root">
       <header className="topbar">
         <h1>🌌 MusicMap</h1>
+        <span className="taxonomy-badge">{stats.genres} géneros · {stats.subgenres} subgéneros</span>
         <div className="view-switch">
           <button className={view === 'galaxy' ? 'active' : ''} onClick={() => setView('galaxy')}>Galaxia</button>
           <button className={view === 'everynoise' ? 'active' : ''} onClick={() => setView('everynoise')}>Every Noise</button>
