@@ -50,10 +50,26 @@ describe('classifyGenre: solo keywords (sin audio)', () => {
     }
   });
 
-  it('sin ningún tag ni análisis, devuelve "Sin clasificar"', () => {
+  it('sin ningún tag ni análisis, igualmente asigna un género concreto (nunca "Sin clasificar")', () => {
     const r = classifyGenre({ rawGenreTag: '', rawTags: [], title: '' });
-    expect(r.primary).toBe('Sin clasificar');
-    expect(r.confidence).toBe(0);
+    expect(r.primary).not.toBe('Sin clasificar');
+    expect(r.primary).toBeTruthy();
+    expect(r.subgenre).toBeTruthy();
+    expect(r.isGuess).toBe(true);
+    expect(r.confidence).toBeGreaterThan(0);
+    expect(r.confidence).toBeLessThan(0.2);
+  });
+
+  it('el fallback por hash es determinista: mismo input -> mismo resultado', () => {
+    const a = classifyGenre({ rawGenreTag: '', rawTags: [], title: 'Untitled Track 47' });
+    const b = classifyGenre({ rawGenreTag: '', rawTags: [], title: 'Untitled Track 47' });
+    expect(a.primary).toBe(b.primary);
+    expect(a.subgenre).toBe(b.subgenre);
+  });
+
+  it('un tag genérico de SoundCloud sin match ("Dance & EDM") no deja el track sin clasificar', () => {
+    const r = classifyGenre({ rawGenreTag: 'Dance & EDM', rawTags: [], title: 'Untitled' });
+    expect(r.primary).not.toBe('Sin clasificar');
   });
 
   it('el hue del resultado varía entre distintos subgéneros de la misma familia', () => {

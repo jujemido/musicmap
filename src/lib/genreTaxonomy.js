@@ -901,6 +901,17 @@ function keywordScoreFor(haystack, genreDef, subKeywords) {
   return { score, matched };
 }
 
+// Hash determinista simple (djb2) — se usa SOLO como último recurso cuando
+// un track no trae ni tags útiles ni audio analizable, para repartir esos
+// casos entre subgéneros distintos de forma estable (mismo input -> mismo
+// resultado siempre) en vez de que todos caigan en el mismo género por
+// defecto o se queden sin clasificar.
+function stableHash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (h * 33) ^ str.charCodeAt(i);
+  return h >>> 0;
+}
+
 /**
  * Clasifica un track puntuando cada uno de los ~516 subgéneros por dos vías
  * combinadas:
@@ -920,12 +931,20 @@ function keywordScoreFor(haystack, genreDef, subKeywords) {
  *    su propio perfil fino, da mejores resultados en la práctica.
  *
  * Sin audio real (solo metadatos), se usa únicamente el score de keywords.
+ *
+ * SIEMPRE devuelve un género/subgénero concreto — nunca "sin clasificar" —
+ * aunque no haya ni tags útiles ni audio analizable: en ese caso extremo
+ * (p.ej. un track cuyo único tag de SoundCloud es el genérico "Dance & EDM",
+ * que no coincide con ninguna keyword nuestra, y cuyo stream no se pudo
+ * analizar por CORS) se usa un hash determinista del título/artista para
+ * elegir un subgénero de forma estable, marcándolo con `confidence` muy
+ * baja para que la UI pueda distinguirlo de una clasificación real.
  */
 export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysis = null) {
   const haystack = normalize([rawGenreTag, ...rawTags, title].filter(Boolean).join(' '));
   const audioSummary = analysis ? extractAudioSummary(analysis) : null;
 
-  let best = { genre: null, subgenre: null, combined: 0, keywordScore: 0, audioScore: 0, matched: [] };
+  let best = { genre: null, subgenre: null, combined: -Infinity, keywordScore: 0, audioScore: 0, matched: [] };
 
   for (const [genreName, genreDef] of Object.entries(TAXONOMY)) {
     for (const [subName, subKeywords] of Object.entries(genreDef.subgenres)) {
@@ -952,11 +971,20 @@ export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysi
     }
   }
 
-  if (!best.genre || (best.keywordScore === 0 && best.audioScore < 0.35)) {
-    return { primary: 'Sin clasificar', subgenre: null, confidence: 0, matchedKeywords: [], hue: 0 };
+  // Último recurso: ni un solo keyword coincidió y no hay audio que analizar
+  // (combined quedó en 0 para todos los candidatos) — elegir por hash en vez
+  // de dejarlo sin clasificar.
+  const noRealSignal = best.keywordScore === 0 && best.audioScore === 0;
+  if (noRealSignal) {
+    const allSubs = listAllSubgenres();
+    const seed = stableHash(`${rawGenreTag || ''}|${title || ''}|${(rawTags || []).join(',')}`);
+    const pick = allSubs[seed % allSubs.length];
+    best = { genre: pick.genre, subgenre: pick.subgenre.replace(/ /g, '_'), combined: 0, keywordScore: 0, audioScore: 0, matched: [] };
   }
 
-  const confidence = Math.max(Math.min(1, best.keywordScore / 6), best.audioScore * 0.9);
+  const confidence = noRealSignal
+    ? 0.05
+    : Math.max(0.05, Math.min(1, best.keywordScore / 6), best.audioScore * 0.9);
   const baseHue = TAXONOMY[best.genre].hue;
   const offset = subHueOffset(best.genre, best.subgenre);
   const hue = ((baseHue + offset) % 360 + 360) % 360;
@@ -965,6 +993,7 @@ export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysi
     primary: best.genre,
     subgenre: best.subgenre.replace(/_/g, ' '),
     confidence,
+    isGuess: noRealSignal,
     matchedKeywords: best.matched,
     audioMatch: audioSummary ? Math.round(best.audioScore * 100) : null,
     hue,

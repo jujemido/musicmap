@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore';
+import { getSimilarTracks } from '../lib/affinity';
 
 const BAND_LABELS = [
   ['subBass', 'Sub-bass'], ['bass', 'Bass'], ['lowMid', 'Low-mid'], ['mid', 'Mid'],
@@ -75,6 +76,8 @@ function Badge({ children, tone = 'default' }) {
 export default function TrackDetail() {
   const selectedTrackId = useStore((s) => s.selectedTrackId);
   const track = useStore((s) => (selectedTrackId ? s.tracks[selectedTrackId] : null));
+  const tracks = useStore((s) => s.tracks);
+  const affinities = useStore((s) => s.affinities);
   const removeTrack = useStore((s) => s.removeTrack);
   const selectTrack = useStore((s) => s.selectTrack);
 
@@ -83,6 +86,7 @@ export default function TrackDetail() {
   }
 
   const a = track.analysis;
+  const similar = getSimilarTracks(track.id, tracks, affinities, 5);
 
   return (
     <div className="track-detail">
@@ -97,7 +101,9 @@ export default function TrackDetail() {
             {track.genre?.subgenre || track.genre?.primary}
             {track.genre?.primary && track.genre.subgenre && <span className="genre-parent"> · {track.genre.primary}</span>}
           </p>
-          {track.genre?.audioMatch != null && (
+          {track.genre?.isGuess ? (
+            <p className="audio-match-note">🎲 Estimación sin señal fiable (sin tags útiles ni audio analizado)</p>
+          ) : track.genre?.audioMatch != null && (
             <p className="audio-match-note">🔬 {track.genre.audioMatch}% de coincidencia por análisis de audio automático</p>
           )}
         </div>
@@ -140,6 +146,9 @@ export default function TrackDetail() {
           <h4>Espectro de frecuencias</h4>
           <EqBars analysis={a} />
 
+          <h4>Estructura de la canción</h4>
+          <StructureTimeline analysis={a} />
+
           <h4>Métricas exhaustivas</h4>
           <div className="metrics-table">
             <MetricRow label="Regularidad rítmica" value={a.rhythm.regularity} />
@@ -158,7 +167,69 @@ export default function TrackDetail() {
         </>
       )}
 
+      {similar.length > 0 && (
+        <>
+          <h4>Canciones afines</h4>
+          <ul className="similar-list">
+            {similar.map(({ id, score }) => {
+              const t = tracks[id];
+              if (!t) return null;
+              return (
+                <li key={id}>
+                  <button className="similar-item" onClick={() => selectTrack(id)}>
+                    <span className="genre-dot" style={{ background: `hsl(${t.genre?.hue || 0},70%,60%)` }} />
+                    <span className="tl-text">
+                      <span className="tl-title">{t.title}</span>
+                      <span className="tl-sub">{t.genre?.subgenre || t.genre?.primary || 'Sin clasificar'}</span>
+                    </span>
+                    <span className="similar-score">{Math.round(score * 100)}%</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
       <button className="danger-btn" onClick={() => removeTrack(track.id)}>Eliminar de la colección</button>
+    </div>
+  );
+}
+
+function StructureTimeline({ analysis }) {
+  const boundaries = analysis.structure.boundariesRatio || [];
+  const energyThirds = analysis.dynamics.energyThirds || [0.5, 0.5, 0.5];
+  const climax = analysis.dynamics.climaxPositionRatio ?? 0.5;
+  // segmentos entre fronteras, coloreados por una interpolación simple de
+  // energía a lo largo del track (usando los tercios como referencia).
+  const points = [0, ...boundaries, 1].sort((a, b) => a - b);
+  const energyAt = (ratio) => {
+    if (ratio < 0.33) return energyThirds[0];
+    if (ratio < 0.66) return energyThirds[1];
+    return energyThirds[2];
+  };
+  return (
+    <div className="structure-timeline">
+      <div className="structure-bar">
+        {points.slice(0, -1).map((start, i) => {
+          const end = points[i + 1];
+          const e = energyAt((start + end) / 2);
+          return (
+            <div
+              key={i}
+              className="structure-segment"
+              style={{ width: `${(end - start) * 100}%`, opacity: 0.35 + Math.min(1, e) * 0.65 }}
+              title={`Sección ${i + 1}`}
+            />
+          );
+        })}
+        <div className="structure-climax-marker" style={{ left: `${climax * 100}%` }} title="Pico de energía" />
+      </div>
+      <div className="structure-labels">
+        <span>inicio</span>
+        <span>{points.length - 1} secciones</span>
+        <span>final</span>
+      </div>
     </div>
   );
 }

@@ -146,6 +146,20 @@ export function affinityKey(idA, idB) {
   return [idA, idB].sort().join('|');
 }
 
+/** Devuelve las N canciones más afines a `trackId`, ordenadas de mayor a
+ * menor similitud, leyendo del mapa de afinidades ya cacheado. */
+export function getSimilarTracks(trackId, tracks, affinities, n = 5) {
+  const scored = [];
+  for (const otherId of Object.keys(tracks)) {
+    if (otherId === trackId) continue;
+    const score = affinities[affinityKey(trackId, otherId)];
+    if (score === undefined) continue;
+    scored.push({ id: otherId, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, n);
+}
+
 export function recomputeAllAffinities(tracks, weights = CATEGORY_WEIGHTS_DEFAULT) {
   const ids = Object.keys(tracks);
   const affinities = {};

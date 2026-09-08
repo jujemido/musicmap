@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildFeatureVector, weightedSimilarity, recomputeAllAffinities, affinityKey, CATEGORY_WEIGHTS_DEFAULT } from '../affinity';
+import { buildFeatureVector, weightedSimilarity, recomputeAllAffinities, affinityKey, getSimilarTracks, CATEGORY_WEIGHTS_DEFAULT } from '../affinity';
 
 function makeAnalysis(overrides = {}) {
   const band = (v) => ({ mean: v, std: 0.1, introMidOutro: [v, v, v] });
@@ -81,5 +81,29 @@ describe('recomputeAllAffinities', () => {
 
   it('affinityKey es simétrica (mismo resultado sin importar el orden)', () => {
     expect(affinityKey('x', 'y')).toBe(affinityKey('y', 'x'));
+  });
+});
+
+describe('getSimilarTracks', () => {
+  const tracks = { a: {}, b: {}, c: {}, d: {} };
+  const affinities = {
+    [affinityKey('a', 'b')]: 0.9,
+    [affinityKey('a', 'c')]: 0.4,
+    [affinityKey('a', 'd')]: 0.7,
+  };
+
+  it('ordena de mayor a menor afinidad y excluye el propio track', () => {
+    const result = getSimilarTracks('a', tracks, affinities, 5);
+    expect(result.map((r) => r.id)).toEqual(['b', 'd', 'c']);
+    expect(result.find((r) => r.id === 'a')).toBeUndefined();
+  });
+
+  it('respeta el límite n', () => {
+    expect(getSimilarTracks('a', tracks, affinities, 2)).toHaveLength(2);
+  });
+
+  it('ignora pares sin afinidad calculada', () => {
+    const result = getSimilarTracks('b', { a: {}, b: {}, x: {} }, affinities, 5);
+    expect(result.map((r) => r.id)).toEqual(['a']);
   });
 });
