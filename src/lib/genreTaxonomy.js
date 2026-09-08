@@ -902,20 +902,24 @@ function keywordScoreFor(haystack, genreDef, subKeywords) {
 }
 
 /**
- * Clasifica un track recorriendo los ~520 subgéneros de la taxonomía y
- * puntuando cada uno por dos vías independientes, combinadas:
+ * Clasifica un track puntuando cada uno de los ~516 subgéneros por dos vías
+ * combinadas:
  *
- *  - Keywords (tags/título/género declarado): fiables cuando existen, pero
- *    dependen de que el uploader haya etiquetado bien (a menudo no).
- *  - Huella de audio (audioFingerprint.js): comparación determinista entre
- *    el perfil esperado de cada subgénero (BPM, graves, brillo, distorsión,
- *    bailabilidad, voz, reverb) y las métricas reales extraídas del audio
- *    por audioAnalysis.js. Es la vía "automática" que no depende de tags.
+ *  - Keywords (tags/título/género declarado): fiables cuando existen.
+ *  - Huella de audio de 11 dimensiones (audioFingerprint.js: BPM, graves,
+ *    brillo, distorsión, bailabilidad, voz, reverb, regularidad rítmica,
+ *    repetitividad estructural, anchura estéreo, sesgo tonal mayor/menor),
+ *    con modificadores léxicos propios de CADA subgénero (p.ej. "Hard
+ *    Techno" ya espera más BPM y distorsión que el Techno base, "Deep
+ *    House" espera menos brillo, etc.) — la nitidez viene de que cada uno
+ *    de los 516 tiene su propia huella ajustada, no de preseleccionar
+ *    primero una familia "media": probamos eso (ver commit anterior) y un
+ *    centroide de familia ciego a esos matices descartaba la familia
+ *    correcta antes de tiempo en casos límite (p.ej. techno duro y rápido
+ *    perdiendo contra Hardcore). Comparar los 516 de golpe, cada uno ya con
+ *    su propio perfil fino, da mejores resultados en la práctica.
  *
- * Sin audio real (solo metadatos), se usa únicamente el score de keywords,
- * como antes. Con audio real, el peso se reparte: si hay coincidencia de
- * keywords se usa como fuerte prior, pero el audio decide y desempata sobre
- * los cientos de subgéneros que ningún tag menciona explícitamente.
+ * Sin audio real (solo metadatos), se usa únicamente el score de keywords.
  */
 export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysis = null) {
   const haystack = normalize([rawGenreTag, ...rawTags, title].filter(Boolean).join(' '));
@@ -935,9 +939,11 @@ export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysi
       }
 
       // Sin audio: puro keyword. Con audio: keyword pesa como prior fuerte
-      // cuando hay match real, y el audio decide/desempata siempre.
+      // cuando hay match real, y el audio decide/desempata siempre — así
+      // se identifican automáticamente los cientos de subgéneros que
+      // ningún tag menciona explícitamente.
       const combined = audioSummary
-        ? (keywordScore > 0 ? keywordNorm * 0.55 + audioScore * 0.45 : audioScore * 0.7)
+        ? (keywordScore > 0 ? keywordNorm * 0.55 + audioScore * 0.45 : audioScore * 0.75)
         : keywordNorm;
 
       if (combined > best.combined) {
@@ -946,7 +952,6 @@ export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysi
     }
   }
 
-  // Si ni keywords ni audio dieron ninguna señal real, no forzar clasificación.
   if (!best.genre || (best.keywordScore === 0 && best.audioScore < 0.35)) {
     return { primary: 'Sin clasificar', subgenre: null, confidence: 0, matchedKeywords: [], hue: 0 };
   }
