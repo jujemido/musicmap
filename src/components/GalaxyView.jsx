@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { forceSimulation, forceManyBody, forceCollide, forceCenter, forceLink } from 'd3-force';
 import { useStore } from '../store/useStore';
 
@@ -6,6 +6,17 @@ const AFFINITY_THRESHOLD = 0.55;
 
 function hueToColor(hue, alpha = 1) {
   return `hsla(${hue}, 70%, 60%, ${alpha})`;
+}
+
+function readThemeColors() {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    text: style.getPropertyValue('--text').trim() || '#e8e9f5',
+    linkBase: document.documentElement.getAttribute('data-theme') === 'light'
+      ? '60,66,110'
+      : '150,160,200',
+    selectRing: style.getPropertyValue('--accent-a').trim() || '#8b6bf0',
+  };
 }
 
 export default function GalaxyView() {
@@ -16,7 +27,9 @@ export default function GalaxyView() {
   const affinities = useStore((s) => s.affinities);
   const selectedTrackId = useStore((s) => s.selectedTrackId);
   const selectTrack = useStore((s) => s.selectTrack);
+  const theme = useStore((s) => s.settings.theme);
   const nodesRef = useRef([]);
+  const [hovered, setHovered] = useState(null); // { id, title, sub, bpm, x, y }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -25,6 +38,7 @@ export default function GalaxyView() {
     let width = container.clientWidth;
     let height = container.clientHeight;
     let dpr = window.devicePixelRatio || 1;
+    let colors = readThemeColors();
 
     function resize() {
       width = container.clientWidth;
@@ -70,9 +84,10 @@ export default function GalaxyView() {
     simRef.current = sim;
 
     let animId;
+    let hoveredIdRef = null;
+
     function draw() {
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = 'rgba(0,0,0,0)';
 
       // links
       for (const l of links) {
@@ -82,7 +97,7 @@ export default function GalaxyView() {
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(t.x, t.y);
-        ctx.strokeStyle = `rgba(150,160,200,${0.08 + l.score * 0.25})`;
+        ctx.strokeStyle = `rgba(${colors.linkBase},${0.08 + l.score * 0.25})`;
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -91,17 +106,18 @@ export default function GalaxyView() {
       for (const n of nodes) {
         const r = radiusFor(n.track);
         const hue = n.track.genre?.hue ?? 0;
+        const isHovered = n.id === hoveredIdRef;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = hueToColor(hue, n.id === selectedTrackId ? 1 : 0.85);
+        ctx.arc(n.x, n.y, isHovered ? r + 2 : r, 0, Math.PI * 2);
+        ctx.fillStyle = hueToColor(hue, n.id === selectedTrackId ? 1 : isHovered ? 0.95 : 0.85);
         ctx.fill();
-        if (n.id === selectedTrackId) {
+        if (n.id === selectedTrackId || isHovered) {
           ctx.lineWidth = 2;
-          ctx.strokeStyle = '#fff';
+          ctx.strokeStyle = n.id === selectedTrackId ? colors.selectRing : colors.text;
           ctx.stroke();
         }
         if (r > 10) {
-          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.fillStyle = colors.text;
           ctx.font = '11px system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(truncate(n.track.title, 18), n.x, n.y + r + 12);
@@ -117,7 +133,7 @@ export default function GalaxyView() {
       const y = clientY - rect.top;
       for (const n of nodes) {
         const r = radiusFor(n.track);
-        if ((n.x - x) ** 2 + (n.y - y) ** 2 <= r * r) return n;
+        if ((n.x - x) ** 2 + (n.y - y) ** 2 <= (r + 3) ** 2) return n;
       }
       return null;
     }
@@ -135,11 +151,34 @@ export default function GalaxyView() {
       }
     }
     function onMove(e) {
-      if (!dragNode) return;
       const p = e.touches ? e.touches[0] : e;
       const rect = canvas.getBoundingClientRect();
-      dragNode.fx = p.clientX - rect.left;
-      dragNode.fy = p.clientY - rect.top;
+      if (dragNode) {
+        dragNode.fx = p.clientX - rect.left;
+        dragNode.fy = p.clientY - rect.top;
+        return;
+      }
+      if (e.touches) return; // sin hover en táctil
+      const hit = pick(p.clientX, p.clientY);
+      const nextId = hit ? hit.id : null;
+      if (nextId !== hoveredIdRef) {
+        hoveredIdRef = nextId;
+        if (hit) {
+          setHovered({
+            id: hit.id,
+            title: hit.track.title,
+            sub: hit.track.genre?.subgenre || hit.track.genre?.primary || 'Sin clasificar',
+            bpm: hit.track.analysis ? Math.round(hit.track.analysis.rhythm.bpm) : null,
+            x: hit.x,
+            y: hit.y,
+          });
+        } else {
+          setHovered(null);
+        }
+      } else if (hit) {
+        // mantener la posición del tooltip actualizada mientras el nodo se mueve por la física
+        setHovered((prev) => (prev && prev.id === hit.id ? { ...prev, x: hit.x, y: hit.y } : prev));
+      }
     }
     function onUp() {
       if (dragNode) {
@@ -149,8 +188,13 @@ export default function GalaxyView() {
       }
       dragNode = null;
     }
+    function onLeave() {
+      hoveredIdRef = null;
+      setHovered(null);
+    }
     canvas.addEventListener('mousedown', onDown);
     canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mouseleave', onLeave);
     window.addEventListener('mouseup', onUp);
     canvas.addEventListener('touchstart', onDown, { passive: true });
     canvas.addEventListener('touchmove', onMove, { passive: true });
@@ -162,16 +206,23 @@ export default function GalaxyView() {
       ro.disconnect();
       canvas.removeEventListener('mousedown', onDown);
       canvas.removeEventListener('mousemove', onMove);
+      canvas.removeEventListener('mouseleave', onLeave);
       window.removeEventListener('mouseup', onUp);
       canvas.removeEventListener('touchstart', onDown);
       canvas.removeEventListener('touchmove', onMove);
       canvas.removeEventListener('touchend', onUp);
     };
-  }, [tracks, affinities, selectedTrackId, selectTrack]);
+  }, [tracks, affinities, selectedTrackId, selectTrack, theme]);
 
   return (
     <div ref={containerRef} className="galaxy-container">
       <canvas ref={canvasRef} />
+      {hovered && (
+        <div className="node-tooltip" style={{ left: hovered.x, top: hovered.y }}>
+          <strong>{hovered.title}</strong>
+          <span>{hovered.sub}{hovered.bpm ? ` · ${hovered.bpm} BPM` : ''}</span>
+        </div>
+      )}
       {Object.keys(tracks).length === 0 && (
         <div className="galaxy-empty">Añade una canción para empezar a construir tu galaxia musical.</div>
       )}

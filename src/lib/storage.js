@@ -9,6 +9,7 @@ const emptyState = () => ({
     soundcloudClientId: '',
     weightProfile: 'todo',
     layout: 'galaxy',
+    theme: 'dark',
   },
 });
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import GalaxyView from './components/GalaxyView';
 import EveryNoiseView from './components/EveryNoiseView';
 import TrackInput from './components/TrackInput';
@@ -17,6 +17,12 @@ export default function App() {
   const [mobilePanel, setMobilePanel] = useState(false);
   const selectedTrackId = useStore((s) => s.selectedTrackId);
   const trackCount = Object.keys(useStore((s) => s.tracks)).length;
+  const theme = useStore((s) => s.settings.theme);
+  const setSettings = useStore((s) => s.setSettings);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+  }, [theme]);
 
   return (
     <div className="app-root">
@@ -27,6 +33,13 @@ export default function App() {
           <button className={view === 'galaxy' ? 'active' : ''} onClick={() => setView('galaxy')}>Galaxia</button>
           <button className={view === 'everynoise' ? 'active' : ''} onClick={() => setView('everynoise')}>Every Noise</button>
         </div>
+        <button
+          className="settings-toggle"
+          title={theme === 'light' ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro'}
+          onClick={() => setSettings({ theme: theme === 'light' ? 'dark' : 'light' })}
+        >
+          {theme === 'light' ? '🌙' : '☀️'}
+        </button>
         <button className="settings-toggle" onClick={() => setShowSettings((v) => !v)}>⚙️</button>
       </header>
 
