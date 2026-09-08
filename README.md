@@ -48,9 +48,26 @@ No hay modelos entrenados ni llamadas a APIs de IA en ningún punto.
 - **Dinámica**: RMS, rango dinámico, curva de energía, posición del clímax.
 - **Estructura**: matriz de auto-similitud + detección de secciones.
 
-El género/subgénero (estilo Every Noise) sale de una **taxonomía curada a
-mano** (`src/lib/genreTaxonomy.js`) por coincidencia de keywords en tags/título,
-reforzada con el perfil de audio para desempatar subgénero. Actualmente cubre
+El género/subgénero (estilo Every Noise) se identifica **automáticamente por
+análisis de audio**, no solo por los tags del uploader. Cada uno de los ~520
+subgéneros tiene una "huella" de audio esperada (BPM, graves, brillo,
+distorsión, bailabilidad, presencia vocal, reverb) derivada de un perfil por
+familia + modificadores léxicos deterministas sobre el propio nombre del
+subgénero (`src/lib/audioFingerprint.js`: p.ej. "hard"/"uptempo" suben BPM y
+distorsión, "deep"/"ambient" los bajan). La clasificación (`genreTaxonomy.js`)
+compara esa huella contra las métricas reales extraídas del audio y la
+combina con las keywords de tags/título cuando existen (como prior, no como
+única fuente): sin tags fiables, el sistema igualmente identifica el
+subgénero más parecido solo a partir de lo que suena. Es una comparación de
+huellas escritas a mano, no un modelo entrenado — con las limitaciones
+lógicas de eso: entre subgéneros muy próximos en sonido (p.ej. "Deep House"
+vs. "Dark Disco House") puede confundir el vecino más cercano en vez de
+acertar el nombre exacto, algo que en la práctica ninguna heurística de 8
+dimensiones puede evitar del todo. La ficha técnica de cada track muestra el
+**% de coincidencia de audio** para que quede claro cuánta confianza tiene esa
+clasificación automática.
+
+Actualmente cubre
 **42 macro-géneros y 516 subgéneros (558 nodos)**, con un foco muy fuerte y
 muy profundo en electrónica: Techno (46 subs), House (58), Trance (41),
 Drum & Bass (32), Dubstep (23), Trap (15), Hardcore/Hard Dance (33),

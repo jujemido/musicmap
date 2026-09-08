@@ -10,6 +10,8 @@
 // subgénero (rueda de color propia dentro de la familia), igual que en
 // Every Noise.
 
+import { subgenreFingerprint, extractAudioSummary, fingerprintSimilarity } from './audioFingerprint';
+
 export const TAXONOMY = {
   // =======================================================================
   // TECHNO (familia violeta)
@@ -891,78 +893,75 @@ function subHueOffset(genreName, subName) {
   return -span / 2 + (span * idx) / Math.max(1, names.length - 1);
 }
 
+function keywordScoreFor(haystack, genreDef, subKeywords) {
+  let score = 0;
+  const matched = [];
+  for (const kw of genreDef.keywords) if (haystack.includes(kw)) { score += 2; matched.push(kw); }
+  for (const kw of subKeywords) if (haystack.includes(kw)) { score += 3; matched.push(kw); }
+  return { score, matched };
+}
+
 /**
- * Clasifica un track por keywords (tags, título, género declarado) y
- * refuerza/desempata con el perfil de audio (BPM, bandas, ratio vocal).
+ * Clasifica un track recorriendo los ~520 subgéneros de la taxonomía y
+ * puntuando cada uno por dos vías independientes, combinadas:
+ *
+ *  - Keywords (tags/título/género declarado): fiables cuando existen, pero
+ *    dependen de que el uploader haya etiquetado bien (a menudo no).
+ *  - Huella de audio (audioFingerprint.js): comparación determinista entre
+ *    el perfil esperado de cada subgénero (BPM, graves, brillo, distorsión,
+ *    bailabilidad, voz, reverb) y las métricas reales extraídas del audio
+ *    por audioAnalysis.js. Es la vía "automática" que no depende de tags.
+ *
+ * Sin audio real (solo metadatos), se usa únicamente el score de keywords,
+ * como antes. Con audio real, el peso se reparte: si hay coincidencia de
+ * keywords se usa como fuerte prior, pero el audio decide y desempata sobre
+ * los cientos de subgéneros que ningún tag menciona explícitamente.
  */
 export function classifyGenre({ rawGenreTag, rawTags = [], title = '' }, analysis = null) {
   const haystack = normalize([rawGenreTag, ...rawTags, title].filter(Boolean).join(' '));
+  const audioSummary = analysis ? extractAudioSummary(analysis) : null;
 
-  let best = { genre: null, subgenre: null, score: 0, matched: [] };
+  let best = { genre: null, subgenre: null, combined: 0, keywordScore: 0, audioScore: 0, matched: [] };
 
   for (const [genreName, genreDef] of Object.entries(TAXONOMY)) {
-    let genreScore = 0;
-    const matched = [];
-    for (const kw of genreDef.keywords) {
-      if (haystack.includes(kw)) { genreScore += 2; matched.push(kw); }
-    }
     for (const [subName, subKeywords] of Object.entries(genreDef.subgenres)) {
-      let subScore = genreScore;
-      const subMatched = [...matched];
-      for (const kw of subKeywords) {
-        if (haystack.includes(kw)) { subScore += 3; subMatched.push(kw); }
+      const { score: keywordScore, matched } = keywordScoreFor(haystack, genreDef, subKeywords);
+      const keywordNorm = Math.min(1, keywordScore / 6);
+
+      let audioScore = 0;
+      if (audioSummary) {
+        const fp = subgenreFingerprint(genreName, subName);
+        audioScore = fingerprintSimilarity(fp, audioSummary);
       }
-      if (subScore > best.score) {
-        best = { genre: genreName, subgenre: subScore > genreScore ? subName : null, score: subScore, matched: subMatched };
+
+      // Sin audio: puro keyword. Con audio: keyword pesa como prior fuerte
+      // cuando hay match real, y el audio decide/desempata siempre.
+      const combined = audioSummary
+        ? (keywordScore > 0 ? keywordNorm * 0.55 + audioScore * 0.45 : audioScore * 0.7)
+        : keywordNorm;
+
+      if (combined > best.combined) {
+        best = { genre: genreName, subgenre: subName, combined, keywordScore, audioScore, matched };
       }
     }
   }
 
-  let confidence = Math.min(1, best.score / 6);
-
-  // Refuerzo con perfil de audio si hubo match de género pero no de subgénero.
-  if (analysis && best.genre && !best.subgenre) {
-    const { rhythm, spectrum, vocals } = analysis;
-    const bassHeavy = spectrum?.bands?.bass?.mean > spectrum?.bands?.brilliance?.mean;
-    const bpm = rhythm?.bpm || 0;
-
-    const genreDef = TAXONOMY[best.genre];
-    const subNames = Object.keys(genreDef.subgenres);
-    const has = (n) => subNames.includes(n);
-
-    if (best.genre === 'House' && has('Deep House')) {
-      if (bpm >= 118 && bpm <= 124 && bassHeavy) { best.subgenre = 'Deep House'; confidence = Math.max(confidence, 0.5); }
-      else if (bpm > 128) { best.subgenre = 'Tech House'; confidence = Math.max(confidence, 0.45); }
-    } else if (best.genre === 'Techno') {
-      if (bpm >= 120 && bpm <= 128 && bassHeavy) { best.subgenre = 'Minimal Techno'; confidence = Math.max(confidence, 0.45); }
-      else if (bpm > 138) { best.subgenre = 'Hard Techno'; confidence = Math.max(confidence, 0.5); }
-      else if (bpm >= 128 && bpm <= 138) { best.subgenre = 'Peak Time / Driving Techno'; confidence = Math.max(confidence, 0.5); }
-    } else if (best.genre === 'Drum & Bass') {
-      if (bpm >= 160 && bpm <= 180) { best.subgenre = vocals?.isLikelyInstrumental ? 'Neurofunk' : 'Liquid'; confidence = Math.max(confidence, 0.4); }
-    } else if (best.genre === 'Hardcore / Hard Dance') {
-      if (bpm > 180) { best.subgenre = 'Uptempo Hardcore'; confidence = Math.max(confidence, 0.5); }
-      else if (bpm >= 150 && bpm <= 160) { best.subgenre = 'Hardstyle'; confidence = Math.max(confidence, 0.45); }
-    } else if (best.genre === 'Trance') {
-      if (bpm >= 138 && bpm <= 145) { best.subgenre = 'Uplifting Trance'; confidence = Math.max(confidence, 0.4); }
-      else if (bpm > 145) { best.subgenre = 'Psytrance'; confidence = Math.max(confidence, 0.4); }
-    } else if (best.genre === 'Hip-Hop' && vocals?.isLikelyInstrumental === false) {
-      best.subgenre = 'Boom_Bap';
-    }
-  }
-
-  if (!best.genre) {
+  // Si ni keywords ni audio dieron ninguna señal real, no forzar clasificación.
+  if (!best.genre || (best.keywordScore === 0 && best.audioScore < 0.35)) {
     return { primary: 'Sin clasificar', subgenre: null, confidence: 0, matchedKeywords: [], hue: 0 };
   }
 
+  const confidence = Math.max(Math.min(1, best.keywordScore / 6), best.audioScore * 0.9);
   const baseHue = TAXONOMY[best.genre].hue;
-  const offset = best.subgenre ? subHueOffset(best.genre, best.subgenre) : 0;
+  const offset = subHueOffset(best.genre, best.subgenre);
   const hue = ((baseHue + offset) % 360 + 360) % 360;
 
   return {
     primary: best.genre,
-    subgenre: best.subgenre ? best.subgenre.replace(/_/g, ' ') : null,
+    subgenre: best.subgenre.replace(/_/g, ' '),
     confidence,
     matchedKeywords: best.matched,
+    audioMatch: audioSummary ? Math.round(best.audioScore * 100) : null,
     hue,
   };
 }

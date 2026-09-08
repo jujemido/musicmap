@@ -97,6 +97,9 @@ export default function TrackDetail() {
             {track.genre?.subgenre || track.genre?.primary}
             {track.genre?.primary && track.genre.subgenre && <span className="genre-parent"> · {track.genre.primary}</span>}
           </p>
+          {track.genre?.audioMatch != null && (
+            <p className="audio-match-note">🔬 {track.genre.audioMatch}% de coincidencia por análisis de audio automático</p>
+          )}
         </div>
       </div>
 
