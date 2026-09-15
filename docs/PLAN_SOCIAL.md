@@ -1,9 +1,16 @@
 # Plan: MusicMap Social (RRSS de SoundCloud)
 
-> Nota: se pidió usar `impeccable.style` como referencia visual. El proxy de
-> red de este entorno bloquea ese dominio (`EGRESS_BLOCKED`), así que este
-> plan no incorpora nada de su estética. Si querés que el diseño se acerque
-> a algo puntual de ahí, la vía más rápida es pasar una captura de pantalla.
+> Nota sobre `impeccable.style`: el dominio está bloqueado por el proxy de
+> red de este entorno (`EGRESS_BLOCKED`), pero el usuario pegó el contenido
+> de la página a mano. No es una referencia visual estática — es
+> **Impeccable**, una skill/herramienta de diseño para agentes: se instala
+> (`npx impeccable install`), corre como hook que detecta "AI slop" (bordes
+> de side-tab genéricos, beige de IA, serif itálica en headers, cards
+> anidadas, chips "Introducing", puntos pulsantes, etc.) contra el propio
+> design system del proyecto, y se maneja con comandos (`/impeccable init`,
+> `/impeccable polish`, `/impeccable typeset`, `/impeccable critique`, ...).
+> Ver "Fase 0.5" más abajo — se incorpora como tooling del proyecto, no como
+> paleta de colores a copiar.
 
 ## 1. Qué se pide
 
@@ -107,9 +114,10 @@ podium_entries   user_id, post_id, rank (1-3), source_filter ('soundcloud' | 'al
 
 1. **Auth**: login/signup (email o OAuth — Supabase Auth lo da gratis).
 2. **Perfil** (`/u/:handle`): avatar, bio, contador reviews/followers/
-   following, badge de "% match" con el usuario logueado, botón Follow,
-   **Podium** (top 3, con toggle "solo SoundCloud" reusando el filtro por
-   `soundcloud_url != null` del plan anterior), grid/timeline de posts.
+   following, botón Follow, **Podium** (top 3, con toggle "solo SoundCloud"
+   reusando el filtro por `soundcloud_url != null` del plan anterior),
+   grid/timeline de sus posts — cada uno con su badge de % match individual
+   (igual que en el feed).
 3. **Feed** (home): posts de gente que sigo, ordenados por fecha; cada post
    trae reproductor inline (SoundCloud embed o el `PlayerBar` existente),
    like, comentar, compartir, y un badge de **% match** (ese tema puntual
@@ -117,20 +125,28 @@ podium_entries   user_id, post_id, rank (1-3), source_filter ('soundcloud' | 'al
 4. **Composer**: pegar URL de SoundCloud → preview automática (reusa
    `resolveTrack`) → añadir comentario/rating opcional → publicar.
 5. **Comentarios**: hilo simple bajo cada post.
-6. **Matches**: lista de usuarios ordenados por `score` de afinidad, con el
-   mismo % que se ve en el perfil.
 
 ## 6. Fases de implementación propuestas
 
 1. **Fase 0 — Infra**: crear proyecto Supabase, definir schema de arriba,
    RLS, Auth. Añadir router (`react-router`) porque hoy la app no tiene
    rutas (es una sola vista).
-2. **Fase 1 — Identidad + Posts**: signup/login, crear post pegando URL de
+2. **Fase 0.5 — Design tooling (Impeccable)**: `npx impeccable install` en
+   el repo, `/impeccable init` para que escanee el proyecto (colores,
+   tipografía, componentes) y genere `DESIGN.md`, y `PRODUCT.md` con quién
+   usa la app y para qué (gente publicando/escuchando música, en el celular,
+   feed tipo Instagram). A partir de ahí, cada pantalla nueva (perfil, feed,
+   composer, comentarios) se corre por `/impeccable polish` antes de darla
+   por terminada, para evitar los patrones genéricos de "AI slop" y mantener
+   consistencia visual entre pantallas.
+4. **Fase 1 — Identidad + Posts**: signup/login, crear post pegando URL de
    SoundCloud (reusa `soundcloud.js`), feed simple, reproducción.
-3. **Fase 2 — Social**: follows, likes, comentarios.
-4. **Fase 3 — Matches**: cálculo de `taste_vector` y `score` reusando
-   `affinity.js`, UI de % match en perfil y feed.
-5. **Fase 4 — Podium**: top 3 por usuario con filtro "solo SoundCloud"
+5. **Fase 2 — Social**: follows, likes, comentarios.
+6. **Fase 3 — Match por post**: cálculo de `taste_vector` propio (centroide
+   de mis tracks) y de `feature_vector` por post, coseno entre ambos al
+   vuelo en el cliente (reusa `affinity.js`), badge de % match en cada post
+   del feed y del perfil.
+7. **Fase 4 — Podium**: top 3 por usuario con filtro "solo SoundCloud"
    (esto es lo que ya habíamos hablado antes, ahora encaja como feature
    dentro del perfil).
 
