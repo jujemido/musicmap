@@ -54,10 +54,15 @@ reutilizable tal cual:
   configuración. Esto es exactamente lo que necesita un "pegá tu URL de
   SoundCloud" en el composer de posts.
 - `src/lib/genreTaxonomy.js` + `src/lib/affinity.js` → ya calculan un vector
-  de features por track y similitud coseno entre tracks. El **% de match**
-  entre dos usuarios puede construirse igual: vector agregado (promedio o
-  centroide) de los tracks que cada uno publicó, comparado con coseno →
-  mismo mecanismo que ya afina canciones entre sí, aplicado a personas.
+  de features por track y similitud coseno entre tracks. Esto se reutiliza
+  para el **% de match, pero a nivel de POST, no de usuario**: cada post
+  muestra qué tan afín es ESE tema puntual con la colección del usuario que
+  lo está mirando (coseno entre el `featureVector` del track publicado y el
+  centroide del `featureVector` de mis propios tracks) — exactamente el
+  mismo cálculo que hoy afina canciones entre sí en el mapa, solo que
+  comparado contra "mi gusto" en vez de contra otro track suelto. Es un
+  número que cambia según quién lo mira (subjetivo, per-viewer), no una
+  propiedad fija del post.
 - `src/components/PlayerBar.jsx` → reproductor persistente ya funciona con
   `soundcloudUrl`/`audioUrl`; se reutiliza para reproducir posts del feed.
 - `src/store/useStore.js` → patrón de store con Zustand se mantiene, pero
@@ -72,21 +77,28 @@ follows, comentarios, likes, cálculo y ranking de matches, notificaciones.
 ```
 users            id, handle, display_name, avatar_url, bio, taste_vector (jsonb), created_at
 posts            id, user_id, soundcloud_url, title, artist, artwork_url,
-                  duration_ms, genre, subgenre, comment (texto del usuario), created_at
+                  duration_ms, genre, subgenre, feature_vector (jsonb, nullable),
+                  comment (texto del usuario), created_at
 comments         id, post_id, user_id, body, created_at
 likes            id, post_id, user_id, created_at
 follows          follower_id, followee_id, created_at
-matches          user_a_id, user_b_id, score (0-100), computed_at   -- o vista materializada
 podium_entries   user_id, post_id, rank (1-3), source_filter ('soundcloud' | 'all')
 ```
 
 - `taste_vector` en `users`: centroide de los `featureVector` (ya definidos
-  en `affinity.js`) de los tracks que publicó. Se recalcula on-write (nuevo
-  post) o con un job periódico.
-- `matches`: se puede calcular on-demand (comparar contra los N usuarios
-  seguidos/sugeridos) en vez de precomputar todos-contra-todos, que no
-  escala. Empezar simple: match solo entre usuarios que se siguen mutuamente
-  o que aparecen en "sugeridos".
+  en `affinity.js`) de los tracks que publicó/analizó. Se recalcula on-write
+  (nuevo post) o con un job periódico.
+- **Match por post (no por usuario)**: no se precomputa ni se guarda en
+  tabla — se calcula **en el cliente, al vuelo, para el usuario que está
+  mirando el feed**: `cosineSimilarity(post.featureVector, viewer.taste_vector)`.
+  Como depende de quién mira, no tiene sentido persistirlo (sería
+  post × usuarios, y cambia cada vez que cualquiera de los dos agrega un
+  track nuevo). Se reutiliza tal cual la función de similitud coseno que ya
+  existe en `affinity.js`.
+- Si el post no tiene audio analizable (solo metadatos de oEmbed, sin
+  client_id) no hay `featureVector` real → no se puede calcular % exacto;
+  se puede mostrar "sin datos suficientes" o caer a un match aproximado por
+  género/tags (más débil, pero mejor que nada).
 - RLS (Row Level Security) de Supabase: cada usuario solo puede
   insertar/editar sus propios `posts`/`comments`/`likes`; lectura pública
   (o restringida a followers, según se decida la privacidad).
@@ -100,7 +112,8 @@ podium_entries   user_id, post_id, rank (1-3), source_filter ('soundcloud' | 'al
    `soundcloud_url != null` del plan anterior), grid/timeline de posts.
 3. **Feed** (home): posts de gente que sigo, ordenados por fecha; cada post
    trae reproductor inline (SoundCloud embed o el `PlayerBar` existente),
-   like, comentar, compartir.
+   like, comentar, compartir, y un badge de **% match** (ese tema puntual
+   vs. mi colección — ver sección 3).
 4. **Composer**: pegar URL de SoundCloud → preview automática (reusa
    `resolveTrack`) → añadir comentario/rating opcional → publicar.
 5. **Comentarios**: hilo simple bajo cada post.
